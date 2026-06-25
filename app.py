@@ -41,7 +41,7 @@ with col_hasta:
     fecha_fin = st.date_input("Fecha Fin", value=None, format="DD-MM-YYYY")
 
 # =========================================================================
-# PARTE 2: Historial Diario de Operaciones (Con Checklist de Mínimo Diario)
+# PARTE 2: Historial Diario de Operaciones
 # =========================================================================
 if fecha_inicio and fecha_fin:
     if fecha_inicio > fecha_fin:
@@ -49,18 +49,22 @@ if fecha_inicio and fecha_fin:
     else:
         st.subheader("Parte 2: Historial Diario de Operaciones")
         
+        # Generar lista de fechas fija
         lista_fechas = []
         fecha_actual = fecha_inicio
         while fecha_actual <= fecha_fin:
             lista_fechas.append(fecha_actual.strftime("%d-%m-%Y"))
             fecha_actual += timedelta(days=1)
         
-        rango_key = f"val_v3_{lista_fechas[0]}_{lista_fechas[-1]}"
+        # Identificador único del periodo
+        rango_key = f"val_v4_{lista_fechas[0]}_{lista_fechas[-1]}"
         
+        # SOLUCIÓN AL BORRADO: Inicializamos los datos una sola vez en el session_state.
+        # Al no reasignar df_editado directamente en el bucle principal, los datos jamás se perderán.
         if "tabla_datos" not in st.session_state or st.session_state.get("current_key") != rango_key:
             st.session_state["tabla_datos"] = pd.DataFrame({
                 "FECHA": lista_fechas,
-                "¿APLICAR MÍNIMO?": [True] * len(lista_fechas),  # Nueva columna Checklist por día
+                "¿APLICAR MÍNIMO?": [True] * len(lista_fechas),
                 "INICIO T1": [time(0, 0)] * len(lista_fechas),
                 "FINAL T1": [time(0, 0)] * len(lista_fechas),
                 "INICIO T2": [time(0, 0)] * len(lista_fechas),
@@ -79,8 +83,9 @@ if fecha_inicio and fecha_fin:
             "OBSERVACIONES": st.column_config.TextColumn("OBSERVACIONES", default="")
         }
         
-        st.info("Marque la casilla ¿MÍNIMO? si desea asegurar las horas base del trato para ese día laborable.")
+        st.info("Modifique las celdas libremente. Los datos se guardan de forma inmediata a la primera.")
         
+        # El editor ahora maneja los datos de forma completamente estable
         df_editado = st.data_editor(
             st.session_state["tabla_datos"],
             use_container_width=True,
@@ -88,8 +93,6 @@ if fecha_inicio and fecha_fin:
             column_config=columnas_config,
             key=f"editor_{rango_key}"
         )
-        
-        st.session_state["tabla_datos"] = df_editado
 
         def calcular_minutos_turno(h_ini, h_fin):
             if pd.isna(h_ini) or pd.isna(h_fin) or not h_ini or not h_fin:
@@ -116,7 +119,8 @@ if fecha_inicio and fecha_fin:
             filas_pdf = []
             total_general_minutos = 0
             
-            for idx, row in st.session_state["tabla_datos"].iterrows():
+            # Usamos directamente los datos vigentes del componente editado
+            for idx, row in df_editado.iterrows():
                 aplica_minimo_dia = bool(row["¿APLICAR MÍNIMO?"])
                 h_ini1 = row["INICIO T1"]
                 h_fin1 = row["FINAL T1"]
@@ -132,14 +136,11 @@ if fecha_inicio and fecha_fin:
                     minutos_finales_dia = 0
                 else:
                     if aplica_minimo_dia:
-                        # Si está marcado el checklist, se compara con el mínimo del trato
                         minutos_minimos_pactados = int(horas_minimas_dia * 60)
                         minutos_finales_dia = max(minutos_trabajados_dia, minutos_minimos_pactados)
                     else:
-                        # Si está desmarcado, se respeta estrictamente lo trabajado por el reloj
                         minutos_finales_dia = minutos_trabajados_dia
                 
-                # Sumar acumulado real sin errores de arrastre
                 total_general_minutos += minutos_finales_dia
                 
                 def to_ampm(t_obj):
@@ -163,10 +164,9 @@ if fecha_inicio and fecha_fin:
             detraccion = total_factura * 0.10
             total_a_pagar = total_factura - detraccion
             
-            # --- DISEÑO DEL PDF REESTRUCTURADO ---
+            # --- DISEÑO DEL PDF ---
             class CustomPDF(FPDF):
                 def header(self):
-                    # 1. MARCA DE AGUA (Atenuada drásticamente al 3% para legibilidad perfecta)
                     if os.path.exists("grua_fondo.png"):
                         try:
                             with self.local_context(fill_opacity=0.03):
@@ -174,12 +174,11 @@ if fecha_inicio and fecha_fin:
                         except Exception:
                             pass
                     
-                    # 2. LOGO CORPORATIVO CON MARGEN REFORZADO (Evita pisar el título)
                     logo_dibujado = False
                     if os.path.exists("logo.png"):
                         try:
                             self.image("logo.png", x=30, y=10, w=150)
-                            self.ln(32)  # Espacio aumentado para corregir el choque visual
+                            self.ln(32)
                             logo_dibujado = True
                         except Exception:
                             pass
@@ -192,16 +191,16 @@ if fecha_inicio and fecha_fin:
             pdf = CustomPDF(orientation='P', unit='mm', format='A4')
             pdf.add_page()
             
-            # Título principal de la tabla
             pdf.set_fill_color(218, 227, 243)
             pdf.set_font("Helvetica", "B", 12)
             pdf.cell(0, 10, "VALORIZACION", border=1, ln=True, align="C", fill=True)
             pdf.ln(6)
             
-            # Cabecera informativa Parte 1
             pdf.set_font("Helvetica", "B", 10)
-            periodo_texto = f"{fecha_inicio.strftime('%d/%m/%Y')} HASTA {fecha_fin.strftime('%d/%m/%Y')}"
-            
+            periodo_texto = f"{fecha_inicio.strftime('%d/%m/%Y')} HASTA {fecha_fin.strftime('%m/%Y') if fecha_fin else ''}"
+            if fecha_inicio and fecha_fin:
+                periodo_texto = f"{fecha_inicio.strftime('%d/%m/%Y')} HASTA {fecha_fin.strftime('%d/%m/%Y')}"
+
             def escribir_meta_pdf(label, valor):
                 pdf.set_font("Helvetica", "B", 10)
                 pdf.cell(28, 5, label, ln=False)
@@ -216,14 +215,8 @@ if fecha_inicio and fecha_fin:
             escribir_meta_pdf("PERIODO", periodo_texto)
             pdf.ln(5)
             
-            # Anchos del Reporte Vertical (Total exacto = 190mm)
-            w_f = 24   # Fecha
-            w_h = 20   # Horas
-            w_n = 16   # N° Horas Turno
-            w_t = 24   # Total Horas Día
-            w_o = 30   # Observaciones
+            w_f = 24; w_h = 20; w_n = 16; w_t = 24; w_o = 30
             
-            # Títulos de Tabla
             pdf.set_fill_color(218, 227, 243)
             pdf.set_font("Helvetica", "B", 7.5)
             pdf.cell(w_f, 10, "FECHA", border=1, align="C", fill=True)
@@ -237,7 +230,6 @@ if fecha_inicio and fecha_fin:
             pdf.cell(w_o, 10, "OBSERVACIONES", border=1, align="C", fill=True)
             pdf.ln()
             
-            # Filas de la tabla
             pdf.set_font("Helvetica", "", 8)
             for f in filas_pdf:
                 pdf.cell(w_f, 7, f["fecha"], border=1, align="C")
@@ -251,7 +243,6 @@ if fecha_inicio and fecha_fin:
                 pdf.cell(w_o, 7, f["obs"], border=1, align="L")
                 pdf.ln()
                 
-            # Recuadro Amarillo del Total Acumulado (Matemática corregida)
             pdf.cell(136, 7, "", border=0)
             pdf.set_fill_color(255, 255, 0)
             pdf.set_font("Helvetica", "B", 8.5)
@@ -260,10 +251,6 @@ if fecha_inicio and fecha_fin:
             pdf.cell(w_t, 7, texto_acumulado_amarillo, border=1, align="C", fill=True)
             pdf.cell(w_o, 7, "", border=0, ln=True)
             pdf.ln(8)
-            
-            # --- PARTE 3: LIQUIDACIÓN ECONÓMICA ---
-            w_lbl = 45
-            w_val = 25
             
             def dibujar_fila_liquidacion(label, valor, resaltar_amarillo=False):
                 pdf.set_fill_color(255, 255, 0) if resaltar_amarillo else pdf.set_fill_color(255, 255, 255)
