@@ -8,14 +8,15 @@ st.set_page_config(page_title="Valorizaciones", page_icon="📄", layout="center
 st.title("📄 Creador de Valorizaciones")
 st.write("Complete los datos. La tabla se generará automáticamente según las fechas.")
 
-# --- 1. DATOS GENERALES (VACÍOS) ---
+# --- 1. DATOS GENERALES (COMPLETAMENTE VACÍOS) ---
 st.subheader("Datos del Cliente")
 cliente = st.text_input("CLIENTE", value="")
 ruc = st.text_input("RUC", value="")
 proyecto = st.text_input("PROYECTO", value="")
 equipo = st.text_input("EQUIPO", value="")
 costo_hora = st.number_input("COSTO POR HORA (S/.)", min_value=0.0, value=0.0, step=10.0)
-horas_minimas_dia = st.number_input("Horas Mínimas Garantizadas por Día", min_value=0.0, value=8.0, step=1.0)
+# Inicia en 0.0 para que tu tía configure el mínimo del trato actual
+horas_minimas_dia = st.number_input("Horas Mínimas Garantizadas por Día (Trato)", min_value=0.0, value=0.0, step=1.0)
 
 # --- 2. CONFIGURACIÓN DE FECHAS ---
 st.subheader("Periodo de Trabajo")
@@ -36,7 +37,6 @@ if fecha_inicio and fecha_fin:
             lista_fechas.append(fecha_actual.strftime("%d-%m-%Y"))
             fecha_actual += timedelta(days=1)
             
-        # Estructura idéntica a tu formato: Vertical con dos turnos
         datos_base = {
             "FECHA": lista_fechas,
             "Hora Inicio (T1)": [None] * len(lista_fechas),
@@ -46,7 +46,6 @@ if fecha_inicio and fecha_fin:
             "OBSERVACIONES": [""] * len(lista_fechas)
         }
         
-        # Forzar rodillo nativo del iPhone para las horas
         columnas_config = {
             "FECHA": st.column_config.TextColumn("FECHA", disabled=True),
             "Hora Inicio (T1)": st.column_config.TimeColumn("HORA INICIO T1", format="hh:mm a"),
@@ -57,7 +56,6 @@ if fecha_inicio and fecha_fin:
         }
         
         st.subheader("Historial de turnos")
-        st.info("Use las casillas de tiempo para abrir el reloj del iPhone y use la columna OBSERVACIONES para colocar 'Movilización'.")
         
         df_editado = st.data_editor(
             pd.DataFrame(datos_base), 
@@ -79,41 +77,51 @@ if fecha_inicio and fecha_fin:
                 
                 horas_t1 = 0.0
                 str_t1 = ""
+                hubo_registro_t1 = False
                 if pd.notna(h_ini1) and pd.notna(h_fin1) and isinstance(h_ini1, time) and isinstance(h_fin1, time):
+                    hubo_registro_t1 = True
                     t_ini = datetime.combine(datetime.min, h_ini1)
                     t_fin = datetime.combine(datetime.min, h_fin1)
                     if t_fin < t_ini: t_fin += timedelta(days=1)
                     horas_t1 = (t_fin - t_ini).total_seconds() / 3600.0
-                    str_t1 = f"{horas_t1:.1f}H" if horas_t1 > 0 else ""
+                    str_t1 = f"{horas_t1:.1f}H"
                 
                 horas_t2 = 0.0
                 str_t2 = ""
+                hubo_registro_t2 = False
                 if pd.notna(h_ini2) and pd.notna(h_fin2) and isinstance(h_ini2, time) and isinstance(h_fin2, time):
+                    hubo_registro_t2 = True
                     t_ini = datetime.combine(datetime.min, h_ini2)
                     t_fin = datetime.combine(datetime.min, h_fin2)
                     if t_fin < t_ini: t_fin += timedelta(days=1)
                     horas_t2 = (t_fin - t_ini).total_seconds() / 3600.0
-                    str_t2 = f"{horas_t2:.1f}H" if horas_t2 > 0 else ""
+                    str_t2 = f"{horas_t2:.1f}H"
                 
                 total_trabajado_dia = horas_t1 + horas_t2
                 
-                # Regla de negocio: Si no trabajó o fue menor al mínimo, se cobra el mínimo diario
-                horas_finales_dia = max(total_trabajado_dia, horas_minimas_dia)
+                # NUEVA LÓGICA LOGÍSTICA:
+                # Si no se pusieron horas en todo el día (vacío por Movilización), el total del día es CERO.
+                if not hubo_registro_t1 and not hubo_registro_t2:
+                    horas_finales_dia = 0.0
+                else:
+                    # Si ingresó horas pero no llegó al mínimo pactado, se sube al mínimo.
+                    horas_finales_dia = max(total_trabajado_dia, horas_minimas_dia)
+                
                 total_general_horas += horas_finales_dia
                 
                 filas_pdf.append({
                     "fecha": row["FECHA"],
-                    "ini1": h_ini1.strftime("%I:%M %p") if (pd.notna(h_ini1) and isinstance(h_ini1, time)) else "",
-                    "fin1": h_fin1.strftime("%I:%M %p") if (pd.notna(h_fin1) and isinstance(h_fin1, time)) else "",
+                    "ini1": h_ini1.strftime("%I:%M %p") if hubo_registro_t1 else "",
+                    "fin1": h_fin1.strftime("%I:%M %p") if hubo_registro_t1 else "",
                     "n_t1": str_t1,
-                    "ini2": h_ini2.strftime("%I:%M %p") if (pd.notna(h_ini2) and isinstance(h_ini2, time)) else "",
-                    "fin2": h_fin2.strftime("%I:%M %p") if (pd.notna(h_fin2) and isinstance(h_fin2, time)) else "",
+                    "ini2": h_ini2.strftime("%I:%M %p") if hubo_registro_t2 else "",
+                    "fin2": h_fin2.strftime("%I:%M %p") if hubo_registro_t2 else "",
                     "n_t2": str_t2,
-                    "total_dia": f"{horas_finales_dia:.1f}H",
+                    "total_dia": f"{horas_finales_dia:.1f}H" if horas_finales_dia > 0 else "",
                     "obs": row["OBSERVACIONES"] if pd.notna(row["OBSERVACIONES"]) else ""
                 })
                 
-            # Cálculos Financieros
+            # Cálculos Económicos
             sub_total = total_general_horas * costo_hora
             igv = sub_total * 0.18
             total_factura = sub_total + igv
@@ -124,7 +132,7 @@ if fecha_inicio and fecha_fin:
             pdf = FPDF(orientation='P', unit='mm', format='A4')
             pdf.add_page()
             
-            # Título principal en recuadro idéntico a tu formato
+            # Título principal en recuadro azul grisáceo
             pdf.set_fill_color(218, 227, 243)
             pdf.set_font("Helvetica", "B", 12)
             pdf.cell(0, 10, "VALORIZACION", border=1, ln=True, align="C", fill=True)
@@ -147,7 +155,7 @@ if fecha_inicio and fecha_fin:
             escribir_meta("PERIODO", periodo_texto)
             pdf.ln(5)
             
-            # Anchos del formato vertical de la empresa (Total = 190mm)
+            # Anchos del formato vertical (Total = 190mm)
             w_f = 24   # Fecha
             w_h = 20   # Horas
             w_n = 16   # N° Horas
@@ -168,7 +176,7 @@ if fecha_inicio and fecha_fin:
             pdf.cell(w_o, 10, "OBSERVACIONES", border=1, align="C", fill=True)
             pdf.ln()
             
-            # Datos
+            # Imprimir filas con datos reales de las horas
             pdf.set_font("Helvetica", "", 8)
             for f in filas_pdf:
                 pdf.cell(w_f, 7, f["fecha"], border=1, align="C")
@@ -182,22 +190,20 @@ if fecha_inicio and fecha_fin:
                 pdf.cell(w_o, 7, f["obs"], border=1, align="L")
                 pdf.ln()
                 
-            # Recuadro amarillo de Horas Totales acumuladas
+            # Recuadro amarillo de Horas Totales acumuladas exactas
             pdf.cell(w_f + (w_h*4) + (w_n*2), 7, "", border=0)
             pdf.set_fill_color(255, 255, 0)
             pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(w_t, 7, f"{total_general_horas:.0f}H", border=1, align="C", fill=True)
+            pdf.cell(w_t, 7, f"{total_general_horas:.0f}H" if total_general_horas > 0 else "0H", border=1, align="C", fill=True)
             pdf.cell(w_o, 7, "", border=0, ln=True)
             pdf.ln(8)
             
-            # --- LIQUIDACIÓN ECONÓMICA EXACTA ---
+            # --- LIQUIDACIÓN ECONÓMICA ---
             w_lbl = 45
             w_val = 25
             
-            def fila_liq(label, valor, llenar=False, rgb=None):
+            def fila_liq(label, valor, llenar=False):
                 pdf.set_fill_color(255, 255, 0) if llenar else pdf.set_fill_color(255, 255, 255)
-                if rgb: pdf.set_text_color(*rgb)
-                else: pdf.set_text_color(0, 0, 0)
                 pdf.set_font("Helvetica", "B" if llenar else "", 9)
                 pdf.cell(w_lbl, 5.5, label, border=1, align="L")
                 pdf.cell(w_val, 5.5, valor, border=1, align="R", fill=llenar)
@@ -211,7 +217,6 @@ if fecha_inicio and fecha_fin:
             fila_liq("DETRACCION 10%", f"{detraccion:,.2f}")
             fila_liq("TOTAL A PAGAR", f"{total_a_pagar:,.2f}", llenar=True)
             
-            # Conversión de bytes para la descarga
             pdf_bytes = pdf.output(dest="S")
             st.markdown("---")
             st.download_button(
