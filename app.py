@@ -6,7 +6,7 @@ from fpdf import FPDF
 
 st.set_page_config(page_title="Valorizaciones", page_icon="📄", layout="centered")
 
-# Estilos CSS móviles
+# Estilos CSS móviles para optimizar espacio en el iPhone
 st.markdown("""
     <style>
     .block-container { padding-top: 1.5rem; padding-bottom: 1.5rem; }
@@ -41,7 +41,7 @@ with col_hasta:
     fecha_fin = st.date_input("Fecha Fin", value=None, format="DD-MM-YYYY")
 
 # =========================================================================
-# PARTE 2: Historial Diario de Operaciones
+# PARTE 2: Historial Diario de Operaciones (Con Checklist de Mínimo Diario)
 # =========================================================================
 if fecha_inicio and fecha_fin:
     if fecha_inicio > fecha_fin:
@@ -55,11 +55,12 @@ if fecha_inicio and fecha_fin:
             lista_fechas.append(fecha_actual.strftime("%d-%m-%Y"))
             fecha_actual += timedelta(days=1)
         
-        rango_key = f"datos_{lista_fechas[0]}_{lista_fechas[-1]}"
+        rango_key = f"val_v3_{lista_fechas[0]}_{lista_fechas[-1]}"
         
         if "tabla_datos" not in st.session_state or st.session_state.get("current_key") != rango_key:
             st.session_state["tabla_datos"] = pd.DataFrame({
                 "FECHA": lista_fechas,
+                "¿APLICAR MÍNIMO?": [True] * len(lista_fechas),  # Nueva columna Checklist por día
                 "INICIO T1": [time(0, 0)] * len(lista_fechas),
                 "FINAL T1": [time(0, 0)] * len(lista_fechas),
                 "INICIO T2": [time(0, 0)] * len(lista_fechas),
@@ -70,12 +71,15 @@ if fecha_inicio and fecha_fin:
         
         columnas_config = {
             "FECHA": st.column_config.TextColumn("FECHA", disabled=True),
+            "¿APLICAR MÍNIMO?": st.column_config.CheckboxColumn("¿MÍNIMO?", default=True),
             "INICIO T1": st.column_config.TimeColumn("INICIO T1", format="HH:mm"),
             "FINAL T1": st.column_config.TimeColumn("FINAL T1", format="HH:mm"),
             "INICIO T2": st.column_config.TimeColumn("INICIO T2", format="HH:mm"),
             "FINAL T2": st.column_config.TimeColumn("FINAL T2", format="HH:mm"),
             "OBSERVACIONES": st.column_config.TextColumn("OBSERVACIONES", default="")
         }
+        
+        st.info("Marque la casilla ¿MÍNIMO? si desea asegurar las horas base del trato para ese día laborable.")
         
         df_editado = st.data_editor(
             st.session_state["tabla_datos"],
@@ -113,6 +117,7 @@ if fecha_inicio and fecha_fin:
             total_general_minutos = 0
             
             for idx, row in st.session_state["tabla_datos"].iterrows():
+                aplica_minimo_dia = bool(row["¿APLICAR MÍNIMO?"])
                 h_ini1 = row["INICIO T1"]
                 h_fin1 = row["FINAL T1"]
                 h_ini2 = row["INICIO T2"]
@@ -126,10 +131,15 @@ if fecha_inicio and fecha_fin:
                 if minutos_trabajados_dia == 0:
                     minutos_finales_dia = 0
                 else:
-                    minutos_minimos_pactados = int(horas_minimas_dia * 60)
-                    minutos_finales_dia = max(minutos_trabajados_dia, minutos_minimos_pactados)
+                    if aplica_minimo_dia:
+                        # Si está marcado el checklist, se compara con el mínimo del trato
+                        minutos_minimos_pactados = int(horas_minimas_dia * 60)
+                        minutos_finales_dia = max(minutos_trabajados_dia, minutos_minimos_pactados)
+                    else:
+                        # Si está desmarcado, se respeta estrictamente lo trabajado por el reloj
+                        minutos_finales_dia = minutos_trabajados_dia
                 
-                # CORRECCIÓN DE LA SUMA TOTAL: Acumular correctamente fila por fila
+                # Sumar acumulado real sin errores de arrastre
                 total_general_minutos += minutos_finales_dia
                 
                 def to_ampm(t_obj):
@@ -153,23 +163,23 @@ if fecha_inicio and fecha_fin:
             detraccion = total_factura * 0.10
             total_a_pagar = total_factura - detraccion
             
-            # --- CLASE CUSTOM PDF CON MARGEN EXTENDIDO EN CABECERA ---
+            # --- DISEÑO DEL PDF REESTRUCTURADO ---
             class CustomPDF(FPDF):
                 def header(self):
-                    # 1. MARCA DE AGUA (GRÚA DE FONDO)
+                    # 1. MARCA DE AGUA (Atenuada drásticamente al 3% para legibilidad perfecta)
                     if os.path.exists("grua_fondo.png"):
                         try:
-                            with self.local_context(fill_opacity=0.12):
+                            with self.local_context(fill_opacity=0.03):
                                 self.image("grua_fondo.png", x=15, y=65, w=180)
                         except Exception:
                             pass
                     
-                    # 2. LOGO CORPORATIVO CON MÁS ESPACIO PARA EVITAR PISAR EL TÍTULO
+                    # 2. LOGO CORPORATIVO CON MARGEN REFORZADO (Evita pisar el título)
                     logo_dibujado = False
                     if os.path.exists("logo.png"):
                         try:
                             self.image("logo.png", x=30, y=10, w=150)
-                            self.ln(28)  # AUMENTADO AQUÍ: Da más aire para que no choque con "VALORIZACION"
+                            self.ln(32)  # Espacio aumentado para corregir el choque visual
                             logo_dibujado = True
                         except Exception:
                             pass
@@ -182,7 +192,7 @@ if fecha_inicio and fecha_fin:
             pdf = CustomPDF(orientation='P', unit='mm', format='A4')
             pdf.add_page()
             
-            # Título principal de la tabla (Ya no se pisará con el logo)
+            # Título principal de la tabla
             pdf.set_fill_color(218, 227, 243)
             pdf.set_font("Helvetica", "B", 12)
             pdf.cell(0, 10, "VALORIZACION", border=1, ln=True, align="C", fill=True)
@@ -241,7 +251,7 @@ if fecha_inicio and fecha_fin:
                 pdf.cell(w_o, 7, f["obs"], border=1, align="L")
                 pdf.ln()
                 
-            # Recuadro Amarillo del Total Acumulado
+            # Recuadro Amarillo del Total Acumulado (Matemática corregida)
             pdf.cell(136, 7, "", border=0)
             pdf.set_fill_color(255, 255, 0)
             pdf.set_font("Helvetica", "B", 8.5)
