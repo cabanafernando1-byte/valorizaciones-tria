@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, time
+import os
 from fpdf import FPDF
 
 st.set_page_config(page_title="Valorizaciones", page_icon="📄", layout="centered")
 
-# Estilos CSS para optimizar la visualización en dispositivos móviles
+# Estilos CSS móviles
 st.markdown("""
     <style>
     .block-container { padding-top: 1.5rem; padding-bottom: 1.5rem; }
@@ -48,7 +49,6 @@ if fecha_inicio and fecha_fin:
     else:
         st.subheader("Parte 2: Historial Diario de Operaciones")
         
-        # Generar rango cronológico de fechas
         lista_fechas = []
         fecha_actual = fecha_inicio
         while fecha_actual <= fecha_fin:
@@ -57,7 +57,6 @@ if fecha_inicio and fecha_fin:
         
         rango_key = f"datos_{lista_fechas[0]}_{lista_fechas[-1]}"
         
-        # Inicializar memoria interna con objetos time(0, 0)
         if "tabla_datos" not in st.session_state or st.session_state.get("current_key") != rango_key:
             st.session_state["tabla_datos"] = pd.DataFrame({
                 "FECHA": lista_fechas,
@@ -69,7 +68,6 @@ if fecha_inicio and fecha_fin:
             })
             st.session_state["current_key"] = rango_key
         
-        # CAMBIO CLAVE: format="HH:mm" para que en pantalla aparezca "00:00" en lugar de "12:00 am"
         columnas_config = {
             "FECHA": st.column_config.TextColumn("FECHA", disabled=True),
             "INICIO T1": st.column_config.TimeColumn("INICIO T1", format="HH:mm"),
@@ -79,9 +77,6 @@ if fecha_inicio and fecha_fin:
             "OBSERVACIONES": st.column_config.TextColumn("OBSERVACIONES", default="")
         }
         
-        st.info("Las casillas en 00:00 se consideran vacías. Use OBSERVACIONES para los días de Movilización.")
-        
-        # Tabla interactiva
         df_editado = st.data_editor(
             st.session_state["tabla_datos"],
             use_container_width=True,
@@ -90,23 +85,19 @@ if fecha_inicio and fecha_fin:
             key=f"editor_{rango_key}"
         )
         
-        # Sincronización con la memoria
         st.session_state["tabla_datos"] = df_editado
 
-        # Función para calcular los minutos transcurridos en un turno
         def calcular_minutos_turno(h_ini, h_fin):
             if pd.isna(h_ini) or pd.isna(h_fin) or not h_ini or not h_fin:
                 return 0
             if h_ini == time(0, 0) and h_fin == time(0, 0):
                 return 0
-                
             t_ini = datetime.combine(datetime.min, h_ini)
             t_fin = datetime.combine(datetime.min, h_fin)
             if t_fin < t_ini: 
                 t_fin += timedelta(days=1)
             return int((t_fin - t_ini).total_seconds() // 60)
 
-        # Formatear el texto de forma exacta (Ej: 3H34min o 8H)
         def formatear_texto_horas(minutos_totales):
             if minutos_totales <= 0:
                 return ""
@@ -132,7 +123,6 @@ if fecha_inicio and fecha_fin:
                 minutos_trabajados_dia = minutos_t1 + minutos_t2
                 
                 minutos_finales_dia = 0
-                
                 if minutos_trabajados_dia == 0:
                     minutos_finales_dia = 0
                 else:
@@ -141,7 +131,6 @@ if fecha_inicio and fecha_fin:
                 
                 total_general_minutos += minutos_finales_dia
                 
-                # El PDF seguirá mostrando las horas en formato AM/PM ejecutivo (12:30 PM, etc.) para el cliente
                 def to_ampm(t_obj):
                     if pd.isna(t_obj) or t_obj is None or t_obj == time(0, 0): return ""
                     return t_obj.strftime("%I:%M %p")
@@ -156,7 +145,6 @@ if fecha_inicio and fecha_fin:
                     "obs": str(row["OBSERVACIONES"]) if pd.notna(row["OBSERVACIONES"]) else ""
                 })
             
-            # Cálculos finales en Soles
             total_general_horas_decimal = total_general_minutos / 60.0
             sub_total = total_general_horas_decimal * costo_hora
             igv = sub_total * 0.18
@@ -164,17 +152,36 @@ if fecha_inicio and fecha_fin:
             detraccion = total_factura * 0.10
             total_a_pagar = total_factura - detraccion
             
-            # --- CONSTRUCCIÓN DEL REPORTE PDF VERTICAL ---
-            pdf = FPDF(orientation='P', unit='mm', format='A4')
+            # --- CLASE CUSTOM PDF PARA MARCA DE AGUA Y LOGO ---
+            class CustomPDF(FPDF):
+                def header(self):
+                    # 1. MARCA DE AGUA (GRÚA DE FONDO) CON OPACIDAD SUAVE
+                    if os.path.exists("grua_fondo.png"):
+                        with self.local_context(fill_opacity=0.12):  # Opacidad súper suave de fondo
+                            # Centrado en una página A4 (Ancho 210, Alto 297)
+                            self.image("grua_fondo.png", x=15, y=65, w=180)
+                    
+                    # 2. LOGO CORPORATIVO DE LA EMPRESA EN EL TOP
+                    if os.path.exists("logo.png"):
+                        # x=30 para dejar espacio, w=150 para que quede centrado y estilizado
+                        self.image("logo.png", x=30, y=10, w=150)
+                        self.ln(18)  # Espacio debajo del logo
+                    else:
+                        # Si no hay logo, pone texto de respaldo para que no quede vacío
+                        self.set_font("Helvetica", "B", 16)
+                        self.cell(0, 10, "CORPORACIÓN CHAPU SAC", ln=True, align="C")
+                        self.ln(5)
+
+            pdf = CustomPDF(orientation='P', unit='mm', format='A4')
             pdf.add_page()
             
-            # Título principal
+            # Título principal de la tabla
             pdf.set_fill_color(218, 227, 243)
             pdf.set_font("Helvetica", "B", 12)
             pdf.cell(0, 10, "VALORIZACION", border=1, ln=True, align="C", fill=True)
             pdf.ln(6)
             
-            # Cabecera informativa
+            # Cabecera informativa Parte 1
             pdf.set_font("Helvetica", "B", 10)
             periodo_texto = f"{fecha_inicio.strftime('%d/%m/%Y')} HASTA {fecha_fin.strftime('%d/%m/%Y')}"
             
@@ -213,7 +220,7 @@ if fecha_inicio and fecha_fin:
             pdf.cell(w_o, 10, "OBSERVACIONES", border=1, align="C", fill=True)
             pdf.ln()
             
-            # Dibujar filas
+            # Filas de la tabla
             pdf.set_font("Helvetica", "", 8)
             for f in filas_pdf:
                 pdf.cell(w_f, 7, f["fecha"], border=1, align="C")
