@@ -57,10 +57,9 @@ if fecha_inicio and fecha_fin:
             fecha_actual += timedelta(days=1)
         
         # Identificador único del periodo
-        rango_key = f"val_v4_{lista_fechas[0]}_{lista_fechas[-1]}"
+        rango_key = f"val_v5_{lista_fechas[0]}_{lista_fechas[-1]}"
         
-        # SOLUCIÓN AL BORRADO: Inicializamos los datos una sola vez en el session_state.
-        # Al no reasignar df_editado directamente en el bucle principal, los datos jamás se perderán.
+        # Inicialización de la estructura limpia en memoria estable
         if "tabla_datos" not in st.session_state or st.session_state.get("current_key") != rango_key:
             st.session_state["tabla_datos"] = pd.DataFrame({
                 "FECHA": lista_fechas,
@@ -83,9 +82,9 @@ if fecha_inicio and fecha_fin:
             "OBSERVACIONES": st.column_config.TextColumn("OBSERVACIONES", default="")
         }
         
-        st.info("Modifique las celdas libremente. Los datos se guardan de forma inmediata a la primera.")
+        st.info("Modifique las celdas libremente. Los datos se guardan al instante y no se borrarán.")
         
-        # El editor ahora maneja los datos de forma completamente estable
+        # El editor maneja los datos sin parpadeos molestones
         df_editado = st.data_editor(
             st.session_state["tabla_datos"],
             use_container_width=True,
@@ -119,7 +118,6 @@ if fecha_inicio and fecha_fin:
             filas_pdf = []
             total_general_minutos = 0
             
-            # Usamos directamente los datos vigentes del componente editado
             for idx, row in df_editado.iterrows():
                 aplica_minimo_dia = bool(row["¿APLICAR MÍNIMO?"])
                 h_ini1 = row["INICIO T1"]
@@ -197,7 +195,7 @@ if fecha_inicio and fecha_fin:
             pdf.ln(6)
             
             pdf.set_font("Helvetica", "B", 10)
-            periodo_texto = f"{fecha_inicio.strftime('%d/%m/%Y')} HASTA {fecha_fin.strftime('%m/%Y') if fecha_fin else ''}"
+            periodo_texto = ""
             if fecha_inicio and fecha_fin:
                 periodo_texto = f"{fecha_inicio.strftime('%d/%m/%Y')} HASTA {fecha_fin.strftime('%d/%m/%Y')}"
 
@@ -252,11 +250,15 @@ if fecha_inicio and fecha_fin:
             pdf.cell(w_o, 7, "", border=0, ln=True)
             pdf.ln(8)
             
+            # REPARACIÓN AQUÍ: Definición de variables w_lbl y w_val dentro del bloque correcto
+            w_lbl_liq = 45
+            w_val_liq = 25
+            
             def dibujar_fila_liquidacion(label, valor, resaltar_amarillo=False):
                 pdf.set_fill_color(255, 255, 0) if resaltar_amarillo else pdf.set_fill_color(255, 255, 255)
                 pdf.set_font("Helvetica", "B" if resaltar_amarillo else "", 9)
-                pdf.cell(w_lbl, 5.5, label, border=1, align="L")
-                pdf.cell(w_val, 5.5, valor, border=1, align="R", fill=resaltar_amarillo)
+                pdf.cell(w_lbl_liq, 5.5, label, border=1, align="L")
+                pdf.cell(w_val_liq, 5.5, valor, border=1, align="R", fill=resaltar_amarillo)
                 pdf.ln()
 
             dibujar_fila_liquidacion("TOTAL, HORA MAQUINA", texto_acumulado_amarillo, resaltar_amarillo=True)
