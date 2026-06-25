@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from fpdf import FPDF
 
 # Configuración de página adaptada para visualización móvil
@@ -53,7 +53,7 @@ if fecha_inicio and fecha_fin:
             "Fecha": st.column_config.TextColumn("Fecha", disabled=True)
         }
         
-        # Crear la estructura de datos base
+        # Crear la estructura de datos base con None para que estén vacíos
         datos_base = {"Fecha": lista_fechas}
         
         for t in range(1, cantidad_turnos + 1):
@@ -97,7 +97,8 @@ if fecha_inicio and fecha_fin:
                     total_turno = 0.0
                     str_turno = ""
                     
-                    if pd.notna(h_ini) and pd.notna(h_fin):
+                    # Verificación blindada: Solo procesa si ambos campos son objetos de hora válidos
+                    if pd.notna(h_ini) and pd.notna(h_fin) and isinstance(h_ini, time) and isinstance(h_fin, time):
                         # Convertir a objetos datetime para restar
                         t_ini = datetime.combine(datetime.min, h_ini)
                         t_fin = datetime.combine(datetime.min, h_fin)
@@ -117,8 +118,10 @@ if fecha_inicio and fecha_fin:
                         str_turno = f"{hrs_vis}h {mins_vis}min"
                         
                     suma_horas_dia += total_turno
-                    registro_fila_pdf[f"T{t}_ini"] = h_ini.strftime("%I:%M %p") if pd.notna(h_ini) else ""
-                    registro_fila_pdf[f"T{t}_fin"] = h_fin.strftime("%I:%M %p") if pd.notna(h_fin) else ""
+                    
+                    # Formatear la hora para el PDF si existe, si no, dejar vacío
+                    registro_fila_pdf[f"T{t}_ini"] = h_ini.strftime("%I:%M %p") if (pd.notna(h_ini) and isinstance(h_ini, time)) else ""
+                    registro_fila_pdf[f"T{t}_fin"] = h_fin.strftime("%I:%M %p") if (pd.notna(h_fin) and isinstance(h_fin, time)) else ""
                     registro_fila_pdf[f"T{t}_tot"] = str_turno
                 
                 lista_totales_dias.append(suma_horas_dia)
@@ -215,7 +218,7 @@ if fecha_inicio and fecha_fin:
             # Salida de datos en bytes limpia para la web
             pdf_bytes = pdf.output(dest="S")
             
-            st.ln(5)
+            st.markdown("---")
             st.download_button(
                 label="📥 Descargar PDF Horizontal en iPhone",
                 data=bytes(pdf_bytes),
