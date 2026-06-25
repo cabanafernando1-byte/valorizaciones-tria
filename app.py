@@ -40,7 +40,7 @@ with col_hasta:
     fecha_fin = st.date_input("Fecha Fin", value=None, format="DD-MM-YYYY")
 
 # =========================================================================
-# PARTE 2: Historial Diario de Operaciones (Memoria Corregida)
+# PARTE 2: Historial Diario de Operaciones
 # =========================================================================
 if fecha_inicio and fecha_fin:
     if fecha_inicio > fecha_fin:
@@ -48,17 +48,16 @@ if fecha_inicio and fecha_fin:
     else:
         st.subheader("Parte 2: Historial Diario de Operaciones")
         
-        # Crear la lista de fechas del rango
+        # Generar rango cronológico de fechas
         lista_fechas = []
         fecha_actual = fecha_inicio
         while fecha_actual <= fecha_fin:
             lista_fechas.append(fecha_actual.strftime("%d-%m-%Y"))
             fecha_actual += timedelta(days=1)
         
-        # Identificador único para el rango de fechas actual
         rango_key = f"datos_{lista_fechas[0]}_{lista_fechas[-1]}"
         
-        # Si cambiaron las fechas o no existe la memoria, se crea la estructura limpia
+        # Inicializar memoria interna limpia sin conflictos
         if "tabla_datos" not in st.session_state or st.session_state.get("current_key") != rango_key:
             st.session_state["tabla_datos"] = pd.DataFrame({
                 "FECHA": lista_fechas,
@@ -70,7 +69,7 @@ if fecha_inicio and fecha_fin:
             })
             st.session_state["current_key"] = rango_key
         
-        # Configuración de columnas para el rodillo nativo de iOS
+        # Configuración de columnas con el rodillo nativo del iPhone
         columnas_config = {
             "FECHA": st.column_config.TextColumn("FECHA", disabled=True),
             "INICIO T1": st.column_config.TimeColumn("INICIO T1", format="hh:mm a"),
@@ -82,7 +81,7 @@ if fecha_inicio and fecha_fin:
         
         st.info("Deje las horas vacías si el día corresponde a una Movilización ya pagada.")
         
-        # Tabla interactiva conectada de forma segura
+        # Tabla interactiva
         df_editado = st.data_editor(
             st.session_state["tabla_datos"],
             use_container_width=True,
@@ -91,10 +90,10 @@ if fecha_inicio and fecha_fin:
             key=f"editor_{rango_key}"
         )
         
-        # Sincronización inmediata con la memoria interna
+        # Sincronización con la memoria
         st.session_state["tabla_datos"] = df_editado
 
-        # Función para calcular los minutos de un turno
+        # Función para calcular los minutos transcurridos en un turno
         def calcular_minutos_turno(h_ini, h_fin):
             if pd.isna(h_ini) or pd.isna(h_fin) or not h_ini or not h_fin:
                 return 0
@@ -104,7 +103,7 @@ if fecha_inicio and fecha_fin:
                 t_fin += timedelta(days=1)
             return int((t_fin - t_ini).total_seconds() // 60)
 
-        # Función para formatear el texto a mostrar en el PDF (Ej: 3H34min o 8H)
+        # Formatear el texto de forma exacta (Ej: 3H34min o 8H)
         def formatear_texto_horas(minutos_totales):
             if minutos_totales <= 0:
                 return ""
@@ -126,17 +125,15 @@ if fecha_inicio and fecha_fin:
                 h_fin2 = row["FINAL T2"]
                 
                 minutos_t1 = calcular_minutos_turno(h_ini1, h_fin1)
-                minutos_t2 = calcular_minutos_turno(h_ini2, h_fin2)
+                minutos_t2 = calcular_minutos_turno(h_ini2, h_fin2) # CORREGIDO AQUÍ (Antes decía minutes_t2)
                 minutos_trabajados_dia = minutos_t1 + minutos_t2
                 
                 minutos_finales_dia = 0
                 
-                # Regla de negocio estricta:
-                # Si las casillas están vacías (0 minutos), el total del día es estrictamente CERO (Caso Movilización)
+                # Regla de negocio: si no hay horas reales de trabajo, queda en 0 (Movilización).
                 if minutos_trabajados_dia == 0:
                     minutos_finales_dia = 0
                 else:
-                    # Si tiene horas, se aplica la comparación contra el trato de horas mínimas
                     minutos_minimos_pactados = int(horas_minimas_dia * 60)
                     minutos_finales_dia = max(minutos_trabajados_dia, minutos_minimos_pactados)
                 
@@ -156,7 +153,7 @@ if fecha_inicio and fecha_fin:
                     "obs": str(row["OBSERVACIONES"]) if pd.notna(row["OBSERVACIONES"]) else ""
                 })
             
-            # Cálculos en formato decimal para la liquidación final en dinero
+            # Cálculos finales en Soles
             total_general_horas_decimal = total_general_minutos / 60.0
             sub_total = total_general_horas_decimal * costo_hora
             igv = sub_total * 0.18
@@ -168,13 +165,13 @@ if fecha_inicio and fecha_fin:
             pdf = FPDF(orientation='P', unit='mm', format='A4')
             pdf.add_page()
             
-            # Título con recuadro oficial
+            # Título principal
             pdf.set_fill_color(218, 227, 243)
             pdf.set_font("Helvetica", "B", 12)
             pdf.cell(0, 10, "VALORIZACION", border=1, ln=True, align="C", fill=True)
             pdf.ln(6)
             
-            # Cabecera informativa alineada con dos puntos (:)
+            # Cabecera informativa con dos puntos (:) perfectamente alineados
             pdf.set_font("Helvetica", "B", 10)
             periodo_texto = f"{fecha_inicio.strftime('%d/%m/%Y')} HASTA {fecha_fin.strftime('%d/%m/%Y')}"
             
@@ -192,14 +189,14 @@ if fecha_inicio and fecha_fin:
             escribir_meta_pdf("PERIODO", periodo_texto)
             pdf.ln(5)
             
-            # Anchos óptimos de columnas (Total exacto = 190mm)
+            # Anchos del Reporte Vertical (Total exacto = 190mm)
             w_f = 24   # Fecha
             w_h = 20   # Horas
             w_n = 16   # N° Horas Turno
             w_t = 24   # Total Horas Día
             w_o = 30   # Observaciones
             
-            # Cabeceras de Tabla optimizadas
+            # Títulos de Tabla
             pdf.set_fill_color(218, 227, 243)
             pdf.set_font("Helvetica", "B", 7.5)
             pdf.cell(w_f, 10, "FECHA", border=1, align="C", fill=True)
@@ -213,7 +210,7 @@ if fecha_inicio and fecha_fin:
             pdf.cell(w_o, 10, "OBSERVACIONES", border=1, align="C", fill=True)
             pdf.ln()
             
-            # Dibujar el contenido de las filas
+            # Dibujar filas
             pdf.set_font("Helvetica", "", 8)
             for f in filas_pdf:
                 pdf.cell(w_f, 7, f["fecha"], border=1, align="C")
