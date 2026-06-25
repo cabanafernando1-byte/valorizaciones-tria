@@ -129,6 +129,7 @@ if fecha_inicio and fecha_fin:
                     minutos_minimos_pactados = int(horas_minimas_dia * 60)
                     minutos_finales_dia = max(minutos_trabajados_dia, minutos_minimos_pactados)
                 
+                # CORRECCIÓN DE LA SUMA TOTAL: Acumular correctamente fila por fila
                 total_general_minutos += minutos_finales_dia
                 
                 def to_ampm(t_obj):
@@ -152,22 +153,28 @@ if fecha_inicio and fecha_fin:
             detraccion = total_factura * 0.10
             total_a_pagar = total_factura - detraccion
             
-            # --- CLASE CUSTOM PDF PARA MARCA DE AGUA Y LOGO ---
+            # --- CLASE CUSTOM PDF CON MARGEN EXTENDIDO EN CABECERA ---
             class CustomPDF(FPDF):
                 def header(self):
-                    # 1. MARCA DE AGUA (GRÚA DE FONDO) CON OPACIDAD SUAVE
+                    # 1. MARCA DE AGUA (GRÚA DE FONDO)
                     if os.path.exists("grua_fondo.png"):
-                        with self.local_context(fill_opacity=0.12):  # Opacidad súper suave de fondo
-                            # Centrado en una página A4 (Ancho 210, Alto 297)
-                            self.image("grua_fondo.png", x=15, y=65, w=180)
+                        try:
+                            with self.local_context(fill_opacity=0.12):
+                                self.image("grua_fondo.png", x=15, y=65, w=180)
+                        except Exception:
+                            pass
                     
-                    # 2. LOGO CORPORATIVO DE LA EMPRESA EN EL TOP
+                    # 2. LOGO CORPORATIVO CON MÁS ESPACIO PARA EVITAR PISAR EL TÍTULO
+                    logo_dibujado = False
                     if os.path.exists("logo.png"):
-                        # x=30 para dejar espacio, w=150 para que quede centrado y estilizado
-                        self.image("logo.png", x=30, y=10, w=150)
-                        self.ln(18)  # Espacio debajo del logo
-                    else:
-                        # Si no hay logo, pone texto de respaldo para que no quede vacío
+                        try:
+                            self.image("logo.png", x=30, y=10, w=150)
+                            self.ln(28)  # AUMENTADO AQUÍ: Da más aire para que no choque con "VALORIZACION"
+                            logo_dibujado = True
+                        except Exception:
+                            pass
+                            
+                    if not logo_dibujado:
                         self.set_font("Helvetica", "B", 16)
                         self.cell(0, 10, "CORPORACIÓN CHAPU SAC", ln=True, align="C")
                         self.ln(5)
@@ -175,7 +182,7 @@ if fecha_inicio and fecha_fin:
             pdf = CustomPDF(orientation='P', unit='mm', format='A4')
             pdf.add_page()
             
-            # Título principal de la tabla
+            # Título principal de la tabla (Ya no se pisará con el logo)
             pdf.set_fill_color(218, 227, 243)
             pdf.set_font("Helvetica", "B", 12)
             pdf.cell(0, 10, "VALORIZACION", border=1, ln=True, align="C", fill=True)
