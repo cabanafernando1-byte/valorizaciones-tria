@@ -57,14 +57,15 @@ if fecha_inicio and fecha_fin:
         
         rango_key = f"datos_{lista_fechas[0]}_{lista_fechas[-1]}"
         
-        # Inicializar memoria interna limpia sin conflictos
+        # SOLUCIÓN DEL ERROR: Inicializamos con objetos datetime.time vacíos (00:00) en lugar de None
+        # para que la compatibilidad de tipos (st.column_config.TimeColumn) sea 100% perfecta.
         if "tabla_datos" not in st.session_state or st.session_state.get("current_key") != rango_key:
             st.session_state["tabla_datos"] = pd.DataFrame({
                 "FECHA": lista_fechas,
-                "INICIO T1": [None] * len(lista_fechas),
-                "FINAL T1": [None] * len(lista_fechas),
-                "INICIO T2": [None] * len(lista_fechas),
-                "FINAL T2": [None] * len(lista_fechas),
+                "INICIO T1": [time(0, 0)] * len(lista_fechas),
+                "FINAL T1": [time(0, 0)] * len(lista_fechas),
+                "INICIO T2": [time(0, 0)] * len(lista_fechas),
+                "FINAL T2": [time(0, 0)] * len(lista_fechas),
                 "OBSERVACIONES": [""] * len(lista_fechas)
             })
             st.session_state["current_key"] = rango_key
@@ -79,9 +80,9 @@ if fecha_inicio and fecha_fin:
             "OBSERVACIONES": st.column_config.TextColumn("OBSERVACIONES", default="")
         }
         
-        st.info("Deje las horas vacías si el día corresponde a una Movilización ya pagada.")
+        st.info("Deje las horas en 12:00 AM (vacío por defecto) si el día corresponde a una Movilización ya pagada.")
         
-        # Tabla interactiva
+        # Tabla interactiva libre de errores de compatibilidad
         df_editado = st.data_editor(
             st.session_state["tabla_datos"],
             use_container_width=True,
@@ -95,8 +96,12 @@ if fecha_inicio and fecha_fin:
 
         # Función para calcular los minutos transcurridos en un turno
         def calcular_minutos_turno(h_ini, h_fin):
+            # Si es la hora por defecto (12:00 AM / 00:00) o está vacío, asumimos que no se trabajó
             if pd.isna(h_ini) or pd.isna(h_fin) or not h_ini or not h_fin:
                 return 0
+            if h_ini == time(0, 0) and h_fin == time(0, 0):
+                return 0
+                
             t_ini = datetime.combine(datetime.min, h_ini)
             t_fin = datetime.combine(datetime.min, h_fin)
             if t_fin < t_ini: 
@@ -125,12 +130,12 @@ if fecha_inicio and fecha_fin:
                 h_fin2 = row["FINAL T2"]
                 
                 minutos_t1 = calcular_minutos_turno(h_ini1, h_fin1)
-                minutos_t2 = calcular_minutos_turno(h_ini2, h_fin2) # CORREGIDO AQUÍ (Antes decía minutes_t2)
+                minutos_t2 = calcular_minutos_turno(h_ini2, h_fin2)
                 minutos_trabajados_dia = minutos_t1 + minutos_t2
                 
                 minutos_finales_dia = 0
                 
-                # Regla de negocio: si no hay horas reales de trabajo, queda en 0 (Movilización).
+                # Regla de negocio: si se queda en 12:00 AM (0 minutos), el total del día es 0 (Movilización).
                 if minutos_trabajados_dia == 0:
                     minutos_finales_dia = 0
                 else:
@@ -140,7 +145,7 @@ if fecha_inicio and fecha_fin:
                 total_general_minutos += minutos_finales_dia
                 
                 def to_ampm(t_obj):
-                    if pd.isna(t_obj) or t_obj is None: return ""
+                    if pd.isna(t_obj) or t_obj is None or t_obj == time(0, 0): return ""
                     return t_obj.strftime("%I:%M %p")
 
                 filas_pdf.append({
