@@ -57,8 +57,7 @@ if fecha_inicio and fecha_fin:
         
         rango_key = f"datos_{lista_fechas[0]}_{lista_fechas[-1]}"
         
-        # SOLUCIÓN DEL ERROR: Inicializamos con objetos datetime.time vacíos (00:00) en lugar de None
-        # para que la compatibilidad de tipos (st.column_config.TimeColumn) sea 100% perfecta.
+        # Inicializar memoria interna con objetos time(0, 0)
         if "tabla_datos" not in st.session_state or st.session_state.get("current_key") != rango_key:
             st.session_state["tabla_datos"] = pd.DataFrame({
                 "FECHA": lista_fechas,
@@ -70,19 +69,19 @@ if fecha_inicio and fecha_fin:
             })
             st.session_state["current_key"] = rango_key
         
-        # Configuración de columnas con el rodillo nativo del iPhone
+        # CAMBIO CLAVE: format="HH:mm" para que en pantalla aparezca "00:00" en lugar de "12:00 am"
         columnas_config = {
             "FECHA": st.column_config.TextColumn("FECHA", disabled=True),
-            "INICIO T1": st.column_config.TimeColumn("INICIO T1", format="hh:mm a"),
-            "FINAL T1": st.column_config.TimeColumn("FINAL T1", format="hh:mm a"),
-            "INICIO T2": st.column_config.TimeColumn("INICIO T2", format="hh:mm a"),
-            "FINAL T2": st.column_config.TimeColumn("FINAL T2", format="hh:mm a"),
+            "INICIO T1": st.column_config.TimeColumn("INICIO T1", format="HH:mm"),
+            "FINAL T1": st.column_config.TimeColumn("FINAL T1", format="HH:mm"),
+            "INICIO T2": st.column_config.TimeColumn("INICIO T2", format="HH:mm"),
+            "FINAL T2": st.column_config.TimeColumn("FINAL T2", format="HH:mm"),
             "OBSERVACIONES": st.column_config.TextColumn("OBSERVACIONES", default="")
         }
         
-        st.info("Deje las horas en 12:00 AM (vacío por defecto) si el día corresponde a una Movilización ya pagada.")
+        st.info("Las casillas en 00:00 se consideran vacías. Use OBSERVACIONES para los días de Movilización.")
         
-        # Tabla interactiva libre de errores de compatibilidad
+        # Tabla interactiva
         df_editado = st.data_editor(
             st.session_state["tabla_datos"],
             use_container_width=True,
@@ -96,7 +95,6 @@ if fecha_inicio and fecha_fin:
 
         # Función para calcular los minutos transcurridos en un turno
         def calcular_minutos_turno(h_ini, h_fin):
-            # Si es la hora por defecto (12:00 AM / 00:00) o está vacío, asumimos que no se trabajó
             if pd.isna(h_ini) or pd.isna(h_fin) or not h_ini or not h_fin:
                 return 0
             if h_ini == time(0, 0) and h_fin == time(0, 0):
@@ -135,7 +133,6 @@ if fecha_inicio and fecha_fin:
                 
                 minutos_finales_dia = 0
                 
-                # Regla de negocio: si se queda en 12:00 AM (0 minutos), el total del día es 0 (Movilización).
                 if minutos_trabajados_dia == 0:
                     minutos_finales_dia = 0
                 else:
@@ -144,6 +141,7 @@ if fecha_inicio and fecha_fin:
                 
                 total_general_minutos += minutos_finales_dia
                 
+                # El PDF seguirá mostrando las horas en formato AM/PM ejecutivo (12:30 PM, etc.) para el cliente
                 def to_ampm(t_obj):
                     if pd.isna(t_obj) or t_obj is None or t_obj == time(0, 0): return ""
                     return t_obj.strftime("%I:%M %p")
@@ -176,7 +174,7 @@ if fecha_inicio and fecha_fin:
             pdf.cell(0, 10, "VALORIZACION", border=1, ln=True, align="C", fill=True)
             pdf.ln(6)
             
-            # Cabecera informativa con dos puntos (:) perfectamente alineados
+            # Cabecera informativa
             pdf.set_font("Helvetica", "B", 10)
             periodo_texto = f"{fecha_inicio.strftime('%d/%m/%Y')} HASTA {fecha_fin.strftime('%d/%m/%Y')}"
             
@@ -229,7 +227,7 @@ if fecha_inicio and fecha_fin:
                 pdf.cell(w_o, 7, f["obs"], border=1, align="L")
                 pdf.ln()
                 
-            # Recuadro Amarillo del Total Acumulado alineado bajo TOTAL HORAS
+            # Recuadro Amarillo del Total Acumulado
             pdf.cell(136, 7, "", border=0)
             pdf.set_fill_color(255, 255, 0)
             pdf.set_font("Helvetica", "B", 8.5)
@@ -239,7 +237,7 @@ if fecha_inicio and fecha_fin:
             pdf.cell(w_o, 7, "", border=0, ln=True)
             pdf.ln(8)
             
-            # --- PARTE 3: LIQUIDACIÓN ECONÓMICA RESUMEN FINAL ---
+            # --- PARTE 3: LIQUIDACIÓN ECONÓMICA ---
             w_lbl = 45
             w_val = 25
             
